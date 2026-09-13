@@ -61,6 +61,7 @@
             const bgRect = this.add.rectangle(400, 430, 720, 720, 0x111111);
             bgRect.setStrokeStyle(4, 0xf1c40f);
 
+            // 確保倍率群組在符號群組的「下層」，這樣掉下來的符號才不會被倍率框遮住
             multiplierGroup = this.add.group();
             symbolGroup = this.add.group();
 
@@ -104,40 +105,52 @@
             }
         }
 
-        function drawGrid(scene, gridData, multipliers, action) {
-            symbolGroup.clear(true, true);
+        // 獨立繪製倍率底板的函式
+        function drawMultipliers(scene, multipliers) {
             multiplierGroup.clear(true, true);
             const startX = 90, startY = 120, spacing = 103;
+            if (!multipliers) return;
 
             for (let r = 0; r < 7; r++) {
                 for (let c = 0; c < 7; c++) {
-                    if (multipliers && multipliers[r][c] > 1) {
-                        let multBox = scene.add.rectangle(startX + c * spacing, startY + r * spacing, 90, 90, 0xe74c3c, 0.6);
+                    if (multipliers[r][c] > 1) {
+                        // 使用帶有透明度的紅色方塊，並加上文字
+                        let multBox = scene.add.rectangle(startX + c * spacing, startY + r * spacing, 95, 95, 0xe74c3c, 0.6);
                         let multText = scene.add.text(startX + c * spacing, startY + r * spacing, `x${multipliers[r][c]}`, {
-                            fontSize: '28px', fontStyle: 'bold', color: '#fff'
+                            fontSize: '28px', fontStyle: 'bold', color: '#f1c40f', stroke: '#000', strokeThickness: 4
                         }).setOrigin(0.5);
                         multiplierGroup.add(multBox);
                         multiplierGroup.add(multText);
                     }
+                }
+            }
+        }
 
+        function drawGrid(scene, gridData, action) {
+            symbolGroup.clear(true, true);
+            const startX = 90, startY = 120, spacing = 103;
+
+            for (let r = 0; r < 7; r++) {
+                for (let c = 0; c < 7; c++) {
                     let backendSymbol = gridData[r][c];
+                    // 修正：如果格子是 "EMPTY" (被炸掉或消除)，就不要畫圖案！
                     if (backendSymbol !== "EMPTY") {
                         let finalY_pos = startY + r * spacing;
                         let sprite = scene.add.sprite(startX + c * spacing, finalY_pos, SYMBOL_MAP[backendSymbol]);
                         sprite.setDisplaySize(90, 90);
                         symbolGroup.add(sprite);
 
+                        // 根據後端傳來的動作執行不同的特效
                         if (action === "initial") {
+                            // 開局掉落：從畫面外很遠的地方掉下來
                             sprite.y = -200 - (r * 100); 
-                            scene.tweens.add({ targets: sprite, y: finalY_pos, duration: 400, ease: 'Sine.easeIn', delay: c * 40 });
+                            scene.tweens.add({ targets: sprite, y: finalY_pos, duration: 300, ease: 'Sine.easeIn', delay: c * 30 });
                         } else if (action === "drop") {
-                            // 修正抖動：只讓上面掉下來的感覺，距離與時間縮短
-                            sprite.y = finalY_pos - 80;
-                            scene.tweens.add({ targets: sprite, y: finalY_pos, duration: 200, ease: 'Sine.easeIn' });
-                        } else if (action === "explode") {
-                            // 爆炸時，畫面上的符號稍微震動一下
-                            scene.tweens.add({ targets: sprite, scaleX: 1.1, scaleY: 1.1, yoyo: true, duration: 150 });
+                            // 雪崩遞補：從稍微上方掉下來，營造遞補感
+                            sprite.y = finalY_pos - 100;
+                            scene.tweens.add({ targets: sprite, y: finalY_pos, duration: 150, ease: 'Sine.easeIn' });
                         }
+                        // 移除了錯誤的 "explode" 全圖放大特效
                     }
                 }
             }
@@ -160,20 +173,24 @@
                         return;
                     }
 
-                    drawGrid(scene, currentStep.grid, currentStep.multipliers, currentStep.action);
+                    // 1. 先畫倍率底板
+                    drawMultipliers(scene, currentStep.multipliers);
+                    // 2. 再畫符號 (被消除或炸掉的位置會是 EMPTY，不會畫出符號)
+                    drawGrid(scene, currentStep.grid, currentStep.action);
                     
+                    // UI 提示更新
                     if (currentStep.step_win > 0) {
                         document.getElementById('winText').innerText = `贏分: $${currentStep.step_win.toFixed(2)}`;
                     } else if (currentStep.action === "explode") {
-                        document.getElementById('winText').innerText = "💣 土豆爆炸！倍率升級！";
+                        document.getElementById('winText').innerText = "💣 碰！倍率升級！";
                     }
 
                     step++;
                     
-                    // 根據動作調整停頓時間，讓節奏更流暢
-                    let delay = 600;
-                    if (currentStep.action === "initial") delay = 1000;
-                    else if (currentStep.action === "explode") delay = 800;
+                    // 根據動作調整停頓時間
+                    let delay = 500; // 預設雪崩速度
+                    if (currentStep.action === "initial") delay = 800; // 開局掉落久一點
+                    else if (currentStep.action === "explode") delay = 600; // 爆炸時稍作停頓展示結果
 
                     setTimeout(nextStep, delay); 
                 } else {
