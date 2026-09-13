@@ -8,6 +8,7 @@
         body { margin: 0; background-color: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
         canvas { border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
         #ui-layer { position: absolute; bottom: 20px; text-align: center; color: white; font-family: sans-serif; z-index: 10; }
+        #top-ui { position: absolute; top: 20px; text-align: center; color: #f1c40f; font-family: sans-serif; font-size: 24px; font-weight: bold; z-index: 10; width: 100%; text-shadow: 2px 2px 4px #000; }
         button { padding: 15px 30px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 0 5px; }
         #spinBtn { background: #e74c3c; }
         #buyBtn { background: #f39c12; }
@@ -16,6 +17,8 @@
     </style>
 </head>
 <body>
+
+    <div id="top-ui"><span id="freeSpinDisplay"></span></div>
 
     <div id="ui-layer">
         <h2 id="winText">準備就緒</h2>
@@ -29,37 +32,40 @@
         const BACKEND_URL = "https://game-kjee.onrender.com";
 
         const config = {
-            type: Phaser.AUTO, width: 800, height: 900, backgroundColor: '#2c3e50',
+            type: Phaser.AUTO, width: 800, height: 900, backgroundColor: '#1a1a1a',
             scene: { preload: preload, create: create },
             scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
         };
 
         const game = new Phaser.Game(config);
         let symbolGroup;
+        let multiplierGroup;
         let isSpinning = false;
         
         const SYMBOL_MAP = {
             "CUCUMBER": "CUCUMBER", "FRIES": "FRIES", "COLA": "COLA",
-            "BURGER": "BURGER", "DONUT": "DONUT", "CHEF": "CHEF", "HOT": "HOT"
+            "BURGER": "BURGER", "DONUT": "DONUT", "CHEF": "CHEF", "HOT": "HOT", "POTATO": "POTATO"
         };
 
         function preload() {
-            // 讀取 GitHub 上的 assets 資料夾，注意大小寫必須與檔名完全相符
             this.load.image('CUCUMBER', 'assets/cucumber.png');
             this.load.image('FRIES', 'assets/fries.png');
             this.load.image('COLA', 'assets/cola.png');
             this.load.image('BURGER', 'assets/burger.png');
             this.load.image('DONUT', 'assets/donut.png');
             this.load.image('CHEF', 'assets/chef.png');
-            this.load.image('HOT', 'assets/HOT.png'); // 特殊獎勵符號
+            this.load.image('HOT', 'assets/HOT.png'); 
+            this.load.image('POTATO', 'assets/potato.png'); 
         }
 
         function create() {
-            symbolGroup = this.add.group();
-            const bgRect = this.add.rectangle(400, 400, 720, 720, 0x1a252f);
+            // 背景框
+            const bgRect = this.add.rectangle(400, 430, 720, 720, 0x111111);
             bgRect.setStrokeStyle(4, 0xf1c40f);
 
-            // 動態更新購買價格
+            multiplierGroup = this.add.group();
+            symbolGroup = this.add.group();
+
             document.getElementById('betAmount').addEventListener('input', (e) => {
                 const bet = parseFloat(e.target.value) || 0;
                 document.getElementById('buyPrice').innerText = (bet * 10).toFixed(2);
@@ -68,17 +74,9 @@
             document.getElementById('spinBtn').addEventListener('click', () => {
                 if (!isSpinning) executeSpin(this, false);
             });
-            
             document.getElementById('buyBtn').addEventListener('click', () => {
                 if (!isSpinning) executeSpin(this, true);
             });
-
-            // 一載入就隨機畫出滿滿的圖案
-            const startSymbols = ["CUCUMBER", "FRIES", "COLA", "BURGER", "DONUT", "CHEF"];
-            const initialGrid = Array(7).fill().map(() =>
-                Array(7).fill().map(() => startSymbols[Math.floor(Math.random() * startSymbols.length)])
-            );
-            drawGrid(this, initialGrid);
         }
 
         async function executeSpin(scene, isFeatureBuy) {
@@ -86,6 +84,7 @@
             document.getElementById('spinBtn').disabled = true;
             document.getElementById('buyBtn').disabled = true;
             document.getElementById('winText').innerText = isFeatureBuy ? "特色購買計算中..." : "計算中...";
+            document.getElementById('freeSpinDisplay').innerText = ""; // 重置免遊文字
 
             const bet = parseFloat(document.getElementById('betAmount').value);
 
@@ -107,29 +106,40 @@
             }
         }
 
-        function drawGrid(scene, gridData) {
+        function drawGrid(scene, gridData, multipliers) {
             symbolGroup.clear(true, true);
-            const startX = 90, startY = 90, spacing = 103;
+            multiplierGroup.clear(true, true);
+            const startX = 90, startY = 120, spacing = 103;
 
             for (let r = 0; r < 7; r++) {
                 for (let c = 0; c < 7; c++) {
+                    // 1. 繪製倍率底板 (如果倍率 > 1)
+                    if (multipliers && multipliers[r][c] > 1) {
+                        let multBox = scene.add.rectangle(startX + c * spacing, startY + r * spacing, 90, 90, 0xe74c3c, 0.4);
+                        let multText = scene.add.text(startX + c * spacing, startY + r * spacing, `x${multipliers[r][c]}`, {
+                            fontSize: '24px', fontStyle: 'bold', color: '#fff'
+                        }).setOrigin(0.5);
+                        multiplierGroup.add(multBox);
+                        multiplierGroup.add(multText);
+                    }
+
+                    // 2. 繪製符號 (帶重力掉落特效)
                     let backendSymbol = gridData[r][c];
                     if (backendSymbol !== "EMPTY") {
-                        // 設定起始位置為畫面上方以外，製造掉落效果
-                        let startY_pos = -300 - (r * 100); 
+                        let startY_pos = -200 - (r * 100); 
                         let finalY_pos = startY + r * spacing;
 
                         let sprite = scene.add.sprite(startX + c * spacing, startY_pos, SYMBOL_MAP[backendSymbol]);
                         sprite.setDisplaySize(90, 90);
                         symbolGroup.add(sprite);
 
-                        // 加入彈跳補間動畫
+                        // 移除 Q 彈，改為重力加速落下 (Sine.easeIn)
                         scene.tweens.add({
                             targets: sprite,
                             y: finalY_pos,
-                            duration: 600,
-                            ease: 'Bounce.easeOut',
-                            delay: c * 50 + r * 20 // 錯開掉落時間
+                            duration: 400, // 加快掉落速度
+                            ease: 'Sine.easeIn',
+                            delay: c * 40 + r * 20 
                         });
                     }
                 }
@@ -140,23 +150,33 @@
             let step = 0;
             function nextStep() {
                 if (step < history.length) {
-                    if (history[step].is_free_spin_trigger) {
-                        document.getElementById('winText').innerText = "🔥 觸發 10 次免費遊戲！🔥";
+                    let currentStep = history[step];
+
+                    // 顯示免遊次數 UI
+                    if (currentStep.free_spin_text) {
+                        document.getElementById('freeSpinDisplay').innerText = currentStep.free_spin_text;
+                    }
+
+                    // 觸發動畫停頓
+                    if (currentStep.is_free_spin_trigger) {
+                        document.getElementById('winText').innerText = "🔥 進入免費遊戲！🔥";
                         step++;
                         setTimeout(nextStep, 2000);
                         return;
                     }
 
-                    drawGrid(scene, history[step].grid);
-                    if (history[step].step_win > 0) {
-                        document.getElementById('winText').innerText = `消除贏分: $${history[step].step_win.toFixed(2)}`;
+                    drawGrid(scene, currentStep.grid, currentStep.multipliers);
+                    
+                    if (currentStep.step_win > 0) {
+                        document.getElementById('winText').innerText = `贏分: $${currentStep.step_win.toFixed(2)}`;
                     }
                     step++;
                     
-                    // 等待掉落動畫播完再進行下一步
-                    setTimeout(nextStep, 1300); 
+                    // 等待動畫播完 (400ms掉落 + 400ms停留展示)
+                    setTimeout(nextStep, 800); 
                 } else {
                     document.getElementById('winText').innerText = `回合結束！總贏分: $${totalWin.toFixed(2)}`;
+                    document.getElementById('freeSpinDisplay').innerText = "";
                     resetSpinState();
                 }
             }
