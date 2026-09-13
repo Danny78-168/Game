@@ -8,8 +8,10 @@
         body { margin: 0; background-color: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
         canvas { border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
         #ui-layer { position: absolute; bottom: 20px; text-align: center; color: white; font-family: sans-serif; z-index: 10; }
-        button { padding: 15px 30px; font-size: 20px; font-weight: bold; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; }
-        button:disabled { background: #555; cursor: not-allowed; }
+        button { padding: 15px 30px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 0 5px; }
+        #spinBtn { background: #e74c3c; }
+        #buyBtn { background: #f39c12; }
+        button:disabled { background: #555 !important; cursor: not-allowed; }
         input { font-size: 20px; padding: 10px; width: 80px; text-align: center; margin-right: 15px; border-radius: 8px; border: 1px solid #ccc; }
     </style>
 </head>
@@ -18,18 +20,16 @@
     <div id="ui-layer">
         <h2 id="winText">準備就緒</h2>
         <label>賭注 ($): <input type="number" id="betAmount" value="1.00" step="0.1"></label>
-        <button id="spinBtn">旋轉 (Spin)</button>
+        <button id="buyBtn">購買特色 ($<span id="buyPrice">10.00</span>)</button>
+        <button id="spinBtn">一般旋轉 (Spin)</button>
     </div>
 
     <script>
-        // ⚠️ 確認這裡是你的正確 Render 後端網址 (無結尾斜線)
+        // ⚠️ 確認這裡是你的 Render 網址
         const BACKEND_URL = "https://game-kjee.onrender.com";
 
         const config = {
-            type: Phaser.AUTO,
-            width: 800,
-            height: 900,
-            backgroundColor: '#2c3e50',
+            type: Phaser.AUTO, width: 800, height: 900, backgroundColor: '#2c3e50',
             scene: { preload: preload, create: create },
             scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
         };
@@ -38,43 +38,47 @@
         let symbolGroup;
         let isSpinning = false;
         
-        // 對應後端的字串與圖片 key
         const SYMBOL_MAP = {
             "CUCUMBER": "CUCUMBER", "FRIES": "FRIES", "COLA": "COLA",
-            "BURGER": "BURGER", "DONUT": "DONUT", "CHEF": "CHEF", "WILD_EXPLODE": "POTATO"
+            "BURGER": "BURGER", "DONUT": "DONUT", "CHEF": "CHEF", "HOT": "HOT"
         };
 
         function preload() {
-            // 設定跨域請求以載入 CDN 圖片
-            this.load.crossOrigin = 'anonymous';
-            
-            // 載入你提供的圖片
-            this.load.image('CUCUMBER', 'https://cdn.phototourl.com/free/2026-09-13-e36df4ce-ac8a-4e23-9425-2c17987b7b31.png');
-            this.load.image('FRIES', 'https://cdn.phototourl.com/free/2026-09-13-2058cda2-95c2-4e51-9452-f47207889895.png');
-            this.load.image('COLA', 'https://cdn.phototourl.com/free/2026-09-13-9dd295ee-2024-46eb-9d4a-9e31628f7245.png');
-            this.load.image('BURGER', 'https://cdn.phototourl.com/free/2026-09-13-1f060c95-598d-4270-8eaf-f7ea6678e404.png');
-            this.load.image('DONUT', 'https://cdn.phototourl.com/free/2026-09-13-5c34bd9e-e9e1-469f-8016-40b41f5bb542.png');
-            this.load.image('CHEF', 'https://cdn.phototourl.com/member/2026-09-13-69aa8e6b-cb26-4432-b7a7-0679da7c188f.png');
-            this.load.image('POTATO', 'https://cdn.phototourl.com/member/2026-09-13-c57e8506-cc62-4ded-a8b6-2c3699229373.png');
+            // 讀取 GitHub 上的 assets 資料夾，注意大小寫必須與檔名完全相符
+            this.load.image('CUCUMBER', 'assets/cucumber.png');
+            this.load.image('FRIES', 'assets/fries.png');
+            this.load.image('COLA', 'assets/cola.png');
+            this.load.image('BURGER', 'assets/burger.png');
+            this.load.image('DONUT', 'assets/donut.png');
+            this.load.image('CHEF', 'assets/chef.png');
+            this.load.image('HOT', 'assets/HOT.png'); // 特殊獎勵符號
         }
 
         function create() {
             symbolGroup = this.add.group();
-            
-            // 畫一個遊戲背景框
             const bgRect = this.add.rectangle(400, 400, 720, 720, 0x1a252f);
             bgRect.setStrokeStyle(4, 0xf1c40f);
 
-            // 綁定 HTML 按鈕事件
+            // 動態更新購買價格
+            document.getElementById('betAmount').addEventListener('input', (e) => {
+                const bet = parseFloat(e.target.value) || 0;
+                document.getElementById('buyPrice').innerText = (bet * 10).toFixed(2);
+            });
+
             document.getElementById('spinBtn').addEventListener('click', () => {
-                if (!isSpinning) executeSpin(this);
+                if (!isSpinning) executeSpin(this, false);
+            });
+            
+            document.getElementById('buyBtn').addEventListener('click', () => {
+                if (!isSpinning) executeSpin(this, true);
             });
         }
 
-        async function executeSpin(scene) {
+        async function executeSpin(scene, isFeatureBuy) {
             isSpinning = true;
             document.getElementById('spinBtn').disabled = true;
-            document.getElementById('winText').innerText = "計算中...";
+            document.getElementById('buyBtn').disabled = true;
+            document.getElementById('winText').innerText = isFeatureBuy ? "特色購買計算中..." : "計算中...";
 
             const bet = parseFloat(document.getElementById('betAmount').value);
 
@@ -82,7 +86,7 @@
                 const response = await fetch(`${BACKEND_URL}/api/spin`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bet_amount: bet })
+                    body: JSON.stringify({ bet_amount: bet, is_feature_buy: isFeatureBuy })
                 });
 
                 if (!response.ok) throw new Error("伺服器錯誤");
@@ -98,21 +102,14 @@
 
         function drawGrid(scene, gridData) {
             symbolGroup.clear(true, true);
-            
-            const startX = 90;
-            const startY = 90;
-            const spacing = 103;
+            const startX = 90, startY = 90, spacing = 103;
 
             for (let r = 0; r < 7; r++) {
                 for (let c = 0; c < 7; c++) {
                     let backendSymbol = gridData[r][c];
                     if (backendSymbol !== "EMPTY") {
-                        let spriteKey = SYMBOL_MAP[backendSymbol];
-                        // 加入圖片並縮放至適合方格的大小
-                        let sprite = scene.add.sprite(startX + c * spacing, startY + r * spacing, spriteKey);
-                        
-                        // 依據原始圖片大小進行縮放，統一為 90x90 像素
-                        sprite.setDisplaySize(90, 90); 
+                        let sprite = scene.add.sprite(startX + c * spacing, startY + r * spacing, SYMBOL_MAP[backendSymbol]);
+                        sprite.setDisplaySize(90, 90);
                         symbolGroup.add(sprite);
                     }
                 }
@@ -123,12 +120,20 @@
             let step = 0;
             function nextStep() {
                 if (step < history.length) {
+                    // 偵測免費遊戲觸發標記
+                    if (history[step].is_free_spin_trigger) {
+                        document.getElementById('winText').innerText = "🔥 觸發 10 次免費遊戲！🔥";
+                        step++;
+                        setTimeout(nextStep, 2000); // 暫停兩秒展示提示
+                        return;
+                    }
+
                     drawGrid(scene, history[step].grid);
                     if (history[step].step_win > 0) {
                         document.getElementById('winText').innerText = `消除贏分: $${history[step].step_win.toFixed(2)}`;
                     }
                     step++;
-                    setTimeout(nextStep, 900); // 每步延遲 0.9 秒播放掉落
+                    setTimeout(nextStep, 700); 
                 } else {
                     document.getElementById('winText').innerText = `回合結束！總贏分: $${totalWin.toFixed(2)}`;
                     resetSpinState();
@@ -140,6 +145,7 @@
         function resetSpinState() {
             isSpinning = false;
             document.getElementById('spinBtn').disabled = false;
+            document.getElementById('buyBtn').disabled = false;
         }
     </script>
 </body>
