@@ -2,84 +2,80 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Hot Potato Slot</title>
+    <title>Hot Potato Slot - Phaser</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; background-color: #222; color: white; }
-        #grid { display: grid; grid-template-columns: repeat(7, 45px); gap: 5px; justify-content: center; margin: 20px auto; }
-        .cell { width: 45px; height: 45px; background: #444; display: flex; align-items: center; justify-content: center; font-size: 10px; border-radius: 5px; font-weight: bold; }
-        .controls { margin-top: 20px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #e74c3c; color: white; border: none; border-radius: 5px; }
-        #status { margin-top: 15px; color: #f1c40f; font-size: 18px; }
+        body { margin: 0; background-color: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        canvas { border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        #ui-layer { position: absolute; bottom: 20px; text-align: center; color: white; font-family: sans-serif; z-index: 10; }
+        button { padding: 15px 30px; font-size: 20px; font-weight: bold; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        input { font-size: 20px; padding: 10px; width: 80px; text-align: center; margin-right: 15px; border-radius: 8px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
-    <h1>HOT POTATO!</h1>
-    <div id="grid"></div>
-    <div class="controls">
+
+    <div id="ui-layer">
+        <h2 id="winText">準備就緒</h2>
         <label>賭注 ($): <input type="number" id="betAmount" value="1.00" step="0.1"></label>
-        <button id="spinBtn" onclick="playSpin()">旋轉 (Spin)</button>
+        <button id="spinBtn">旋轉 (Spin)</button>
     </div>
-    <div id="status">準備就緒</div>
 
     <script>
-        // ⚠️ 請將這裡替換成你的 Render 後端網址 (不含結尾斜線)
+        // ⚠️ 確認這裡是你的正確 Render 後端網址 (無結尾斜線)
         const BACKEND_URL = "https://game-kjee.onrender.com";
 
-        const gridEl = document.getElementById('grid');
-        const statusEl = document.getElementById('status');
-        const spinBtn = document.getElementById('spinBtn');
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 900,
+            backgroundColor: '#2c3e50',
+            scene: { preload: preload, create: create },
+            scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
+        };
 
-        function initGrid() {
-            gridEl.innerHTML = '';
-            for (let i = 0; i < 49; i++) {
-                let cell = document.createElement('div');
-                cell.className = 'cell';
-                gridEl.appendChild(cell);
-            }
-        }
+        const game = new Phaser.Game(config);
+        let symbolGroup;
+        let isSpinning = false;
+        
+        // 對應後端的字串與圖片 key
+        const SYMBOL_MAP = {
+            "CUCUMBER": "CUCUMBER", "FRIES": "FRIES", "COLA": "COLA",
+            "BURGER": "BURGER", "DONUT": "DONUT", "CHEF": "CHEF", "WILD_EXPLODE": "POTATO"
+        };
 
-        // 依據後端傳來的二維陣列渲染畫面
-        function renderGrid(gridData) {
-            gridEl.innerHTML = '';
-            for (let r = 0; r < 7; r++) {
-                for (let c = 0; c < 7; c++) {
-                    let cell = document.createElement('div');
-                    cell.className = 'cell';
-                    let symbol = gridData[r][c];
-                    
-                    cell.textContent = symbol === "EMPTY" ? "" : symbol;
-                    if(symbol === "WILD") cell.style.background = "#e67e22";
-                    else if(symbol !== "EMPTY") cell.style.background = "#34495e";
-                    
-                    gridEl.appendChild(cell);
-                }
-            }
-        }
-
-        // 播放雪崩動畫：依序讀取後端算好的 history 陣列
-        function playHistory(history, totalWin) {
-            let step = 0;
+        function preload() {
+            // 設定跨域請求以載入 CDN 圖片
+            this.load.crossOrigin = 'anonymous';
             
-            function nextStep() {
-                if (step < history.length) {
-                    renderGrid(history[step].grid);
-                    if (history[step].step_win > 0) {
-                        statusEl.textContent = `消除贏分: ${history[step].step_win}`;
-                    }
-                    step++;
-                    // 每步延遲 800 毫秒播放下一幀畫面
-                    setTimeout(nextStep, 800); 
-                } else {
-                    statusEl.textContent = `回合結束！總贏分: ${totalWin}`;
-                    spinBtn.disabled = false;
-                }
-            }
-            nextStep();
+            // 載入你提供的圖片
+            this.load.image('CUCUMBER', 'https://cdn.phototourl.com/free/2026-09-13-e36df4ce-ac8a-4e23-9425-2c17987b7b31.png');
+            this.load.image('FRIES', 'https://cdn.phototourl.com/free/2026-09-13-2058cda2-95c2-4e51-9452-f47207889895.png');
+            this.load.image('COLA', 'https://cdn.phototourl.com/free/2026-09-13-9dd295ee-2024-46eb-9d4a-9e31628f7245.png');
+            this.load.image('BURGER', 'https://cdn.phototourl.com/free/2026-09-13-1f060c95-598d-4270-8eaf-f7ea6678e404.png');
+            this.load.image('DONUT', 'https://cdn.phototourl.com/free/2026-09-13-5c34bd9e-e9e1-469f-8016-40b41f5bb542.png');
+            this.load.image('CHEF', 'https://cdn.phototourl.com/member/2026-09-13-69aa8e6b-cb26-4432-b7a7-0679da7c188f.png');
+            this.load.image('POTATO', 'https://cdn.phototourl.com/member/2026-09-13-c57e8506-cc62-4ded-a8b6-2c3699229373.png');
         }
 
-        async function playSpin() {
-            spinBtn.disabled = true;
-            statusEl.textContent = "與伺服器連線計算中...";
+        function create() {
+            symbolGroup = this.add.group();
+            
+            // 畫一個遊戲背景框
+            const bgRect = this.add.rectangle(400, 400, 720, 720, 0x1a252f);
+            bgRect.setStrokeStyle(4, 0xf1c40f);
+
+            // 綁定 HTML 按鈕事件
+            document.getElementById('spinBtn').addEventListener('click', () => {
+                if (!isSpinning) executeSpin(this);
+            });
+        }
+
+        async function executeSpin(scene) {
+            isSpinning = true;
+            document.getElementById('spinBtn').disabled = true;
+            document.getElementById('winText').innerText = "計算中...";
+
             const bet = parseFloat(document.getElementById('betAmount').value);
 
             try {
@@ -90,22 +86,61 @@
                 });
 
                 if (!response.ok) throw new Error("伺服器錯誤");
-                
                 const data = await response.json();
-                statusEl.textContent = "計算完成，開始掉落...";
                 
-                // 開始播放動畫
-                playHistory(data.history, data.total_win);
-
+                playHistoryAnimation(scene, data.history, data.total_win);
             } catch (error) {
-                statusEl.textContent = "連線失敗，請檢查 F12 Network 狀態";
                 console.error(error);
-                spinBtn.disabled = false;
+                document.getElementById('winText').innerText = "連線失敗";
+                resetSpinState();
             }
         }
 
-        // 啟動時預先畫出空棋盤
-        initGrid();
+        function drawGrid(scene, gridData) {
+            symbolGroup.clear(true, true);
+            
+            const startX = 90;
+            const startY = 90;
+            const spacing = 103;
+
+            for (let r = 0; r < 7; r++) {
+                for (let c = 0; c < 7; c++) {
+                    let backendSymbol = gridData[r][c];
+                    if (backendSymbol !== "EMPTY") {
+                        let spriteKey = SYMBOL_MAP[backendSymbol];
+                        // 加入圖片並縮放至適合方格的大小
+                        let sprite = scene.add.sprite(startX + c * spacing, startY + r * spacing, spriteKey);
+                        
+                        // 依據原始圖片大小進行縮放，統一為 90x90 像素
+                        sprite.setDisplaySize(90, 90); 
+                        symbolGroup.add(sprite);
+                    }
+                }
+            }
+        }
+
+        function playHistoryAnimation(scene, history, totalWin) {
+            let step = 0;
+            function nextStep() {
+                if (step < history.length) {
+                    drawGrid(scene, history[step].grid);
+                    if (history[step].step_win > 0) {
+                        document.getElementById('winText').innerText = `消除贏分: $${history[step].step_win.toFixed(2)}`;
+                    }
+                    step++;
+                    setTimeout(nextStep, 900); // 每步延遲 0.9 秒播放掉落
+                } else {
+                    document.getElementById('winText').innerText = `回合結束！總贏分: $${totalWin.toFixed(2)}`;
+                    resetSpinState();
+                }
+            }
+            nextStep();
+        }
+
+        function resetSpinState() {
+            isSpinning = false;
+            document.getElementById('spinBtn').disabled = false;
+        }
     </script>
 </body>
 </html>
