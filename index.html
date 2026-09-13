@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Hot Potato Slot</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background-color: #222; color: white; }
+        #grid { display: grid; grid-template-columns: repeat(7, 45px); gap: 5px; justify-content: center; margin: 20px auto; }
+        .cell { width: 45px; height: 45px; background: #444; display: flex; align-items: center; justify-content: center; font-size: 10px; border-radius: 5px; font-weight: bold; }
+        .controls { margin-top: 20px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #e74c3c; color: white; border: none; border-radius: 5px; }
+        #status { margin-top: 15px; color: #f1c40f; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <h1>HOT POTATO!</h1>
+    <div id="grid"></div>
+    <div class="controls">
+        <label>賭注 ($): <input type="number" id="betAmount" value="1.00" step="0.1"></label>
+        <button id="spinBtn" onclick="playSpin()">旋轉 (Spin)</button>
+    </div>
+    <div id="status">準備就緒</div>
+
+    <script>
+        // ⚠️ 請將這裡替換成你的 Render 後端網址 (不含結尾斜線)
+        const BACKEND_URL = "https://your-game-backend.onrender.com";
+
+        const gridEl = document.getElementById('grid');
+        const statusEl = document.getElementById('status');
+        const spinBtn = document.getElementById('spinBtn');
+
+        function initGrid() {
+            gridEl.innerHTML = '';
+            for (let i = 0; i < 49; i++) {
+                let cell = document.createElement('div');
+                cell.className = 'cell';
+                gridEl.appendChild(cell);
+            }
+        }
+
+        // 依據後端傳來的二維陣列渲染畫面
+        function renderGrid(gridData) {
+            gridEl.innerHTML = '';
+            for (let r = 0; r < 7; r++) {
+                for (let c = 0; c < 7; c++) {
+                    let cell = document.createElement('div');
+                    cell.className = 'cell';
+                    let symbol = gridData[r][c];
+                    
+                    cell.textContent = symbol === "EMPTY" ? "" : symbol;
+                    if(symbol === "WILD") cell.style.background = "#e67e22";
+                    else if(symbol !== "EMPTY") cell.style.background = "#34495e";
+                    
+                    gridEl.appendChild(cell);
+                }
+            }
+        }
+
+        // 播放雪崩動畫：依序讀取後端算好的 history 陣列
+        function playHistory(history, totalWin) {
+            let step = 0;
+            
+            function nextStep() {
+                if (step < history.length) {
+                    renderGrid(history[step].grid);
+                    if (history[step].step_win > 0) {
+                        statusEl.textContent = `消除贏分: ${history[step].step_win}`;
+                    }
+                    step++;
+                    // 每步延遲 800 毫秒播放下一幀畫面
+                    setTimeout(nextStep, 800); 
+                } else {
+                    statusEl.textContent = `回合結束！總贏分: ${totalWin}`;
+                    spinBtn.disabled = false;
+                }
+            }
+            nextStep();
+        }
+
+        async function playSpin() {
+            spinBtn.disabled = true;
+            statusEl.textContent = "與伺服器連線計算中...";
+            const bet = parseFloat(document.getElementById('betAmount').value);
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/spin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bet_amount: bet })
+                });
+
+                if (!response.ok) throw new Error("伺服器錯誤");
+                
+                const data = await response.json();
+                statusEl.textContent = "計算完成，開始掉落...";
+                
+                // 開始播放動畫
+                playHistory(data.history, data.total_win);
+
+            } catch (error) {
+                statusEl.textContent = "連線失敗，請檢查 F12 Network 狀態";
+                console.error(error);
+                spinBtn.disabled = false;
+            }
+        }
+
+        // 啟動時預先畫出空棋盤
+        initGrid();
+    </script>
+</body>
+</html>
