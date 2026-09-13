@@ -8,7 +8,7 @@
         body { margin: 0; background-color: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
         canvas { border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
         #ui-layer { position: absolute; bottom: 20px; text-align: center; color: white; font-family: sans-serif; z-index: 10; }
-        #top-ui { position: absolute; top: 20px; text-align: center; color: #f1c40f; font-family: sans-serif; font-size: 24px; font-weight: bold; z-index: 10; width: 100%; text-shadow: 2px 2px 4px #000; }
+        #top-ui { position: absolute; top: 30px; text-align: center; color: #f1c40f; font-family: sans-serif; font-size: 32px; font-weight: bold; z-index: 10; width: 100%; text-shadow: 3px 3px 6px #000; pointer-events: none; }
         button { padding: 15px 30px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 0 5px; }
         #spinBtn { background: #e74c3c; }
         #buyBtn { background: #f39c12; }
@@ -28,7 +28,6 @@
     </div>
 
     <script>
-        // ⚠️ 確認這裡是你的 Render 網址
         const BACKEND_URL = "https://game-kjee.onrender.com";
 
         const config = {
@@ -59,7 +58,6 @@
         }
 
         function create() {
-            // 背景框
             const bgRect = this.add.rectangle(400, 430, 720, 720, 0x111111);
             bgRect.setStrokeStyle(4, 0xf1c40f);
 
@@ -84,7 +82,7 @@
             document.getElementById('spinBtn').disabled = true;
             document.getElementById('buyBtn').disabled = true;
             document.getElementById('winText').innerText = isFeatureBuy ? "特色購買計算中..." : "計算中...";
-            document.getElementById('freeSpinDisplay').innerText = ""; // 重置免遊文字
+            document.getElementById('freeSpinDisplay').innerText = "";
 
             const bet = parseFloat(document.getElementById('betAmount').value);
 
@@ -106,41 +104,40 @@
             }
         }
 
-        function drawGrid(scene, gridData, multipliers) {
+        function drawGrid(scene, gridData, multipliers, action) {
             symbolGroup.clear(true, true);
             multiplierGroup.clear(true, true);
             const startX = 90, startY = 120, spacing = 103;
 
             for (let r = 0; r < 7; r++) {
                 for (let c = 0; c < 7; c++) {
-                    // 1. 繪製倍率底板 (如果倍率 > 1)
                     if (multipliers && multipliers[r][c] > 1) {
-                        let multBox = scene.add.rectangle(startX + c * spacing, startY + r * spacing, 90, 90, 0xe74c3c, 0.4);
+                        let multBox = scene.add.rectangle(startX + c * spacing, startY + r * spacing, 90, 90, 0xe74c3c, 0.6);
                         let multText = scene.add.text(startX + c * spacing, startY + r * spacing, `x${multipliers[r][c]}`, {
-                            fontSize: '24px', fontStyle: 'bold', color: '#fff'
+                            fontSize: '28px', fontStyle: 'bold', color: '#fff'
                         }).setOrigin(0.5);
                         multiplierGroup.add(multBox);
                         multiplierGroup.add(multText);
                     }
 
-                    // 2. 繪製符號 (帶重力掉落特效)
                     let backendSymbol = gridData[r][c];
                     if (backendSymbol !== "EMPTY") {
-                        let startY_pos = -200 - (r * 100); 
                         let finalY_pos = startY + r * spacing;
-
-                        let sprite = scene.add.sprite(startX + c * spacing, startY_pos, SYMBOL_MAP[backendSymbol]);
+                        let sprite = scene.add.sprite(startX + c * spacing, finalY_pos, SYMBOL_MAP[backendSymbol]);
                         sprite.setDisplaySize(90, 90);
                         symbolGroup.add(sprite);
 
-                        // 移除 Q 彈，改為重力加速落下 (Sine.easeIn)
-                        scene.tweens.add({
-                            targets: sprite,
-                            y: finalY_pos,
-                            duration: 400, // 加快掉落速度
-                            ease: 'Sine.easeIn',
-                            delay: c * 40 + r * 20 
-                        });
+                        if (action === "initial") {
+                            sprite.y = -200 - (r * 100); 
+                            scene.tweens.add({ targets: sprite, y: finalY_pos, duration: 400, ease: 'Sine.easeIn', delay: c * 40 });
+                        } else if (action === "drop") {
+                            // 修正抖動：只讓上面掉下來的感覺，距離與時間縮短
+                            sprite.y = finalY_pos - 80;
+                            scene.tweens.add({ targets: sprite, y: finalY_pos, duration: 200, ease: 'Sine.easeIn' });
+                        } else if (action === "explode") {
+                            // 爆炸時，畫面上的符號稍微震動一下
+                            scene.tweens.add({ targets: sprite, scaleX: 1.1, scaleY: 1.1, yoyo: true, duration: 150 });
+                        }
                     }
                 }
             }
@@ -152,31 +149,38 @@
                 if (step < history.length) {
                     let currentStep = history[step];
 
-                    // 顯示免遊次數 UI
                     if (currentStep.free_spin_text) {
                         document.getElementById('freeSpinDisplay').innerText = currentStep.free_spin_text;
                     }
 
-                    // 觸發動畫停頓
                     if (currentStep.is_free_spin_trigger) {
-                        document.getElementById('winText').innerText = "🔥 進入免費遊戲！🔥";
+                        document.getElementById('winText').innerText = "🔥 進入 10 次免費遊戲！🔥";
                         step++;
                         setTimeout(nextStep, 2000);
                         return;
                     }
 
-                    drawGrid(scene, currentStep.grid, currentStep.multipliers);
+                    drawGrid(scene, currentStep.grid, currentStep.multipliers, currentStep.action);
                     
                     if (currentStep.step_win > 0) {
                         document.getElementById('winText').innerText = `贏分: $${currentStep.step_win.toFixed(2)}`;
+                    } else if (currentStep.action === "explode") {
+                        document.getElementById('winText').innerText = "💣 土豆爆炸！倍率升級！";
                     }
+
                     step++;
                     
-                    // 等待動畫播完 (400ms掉落 + 400ms停留展示)
-                    setTimeout(nextStep, 800); 
+                    // 根據動作調整停頓時間，讓節奏更流暢
+                    let delay = 600;
+                    if (currentStep.action === "initial") delay = 1000;
+                    else if (currentStep.action === "explode") delay = 800;
+
+                    setTimeout(nextStep, delay); 
                 } else {
                     document.getElementById('winText').innerText = `回合結束！總贏分: $${totalWin.toFixed(2)}`;
-                    document.getElementById('freeSpinDisplay').innerText = "";
+                    if (!history[history.length-1].free_spin_text) {
+                        document.getElementById('freeSpinDisplay').innerText = "";
+                    }
                     resetSpinState();
                 }
             }
