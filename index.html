@@ -72,6 +72,13 @@
             document.getElementById('buyBtn').addEventListener('click', () => {
                 if (!isSpinning) executeSpin(this, true);
             });
+
+            // 一載入就隨機畫出滿滿的圖案
+            const startSymbols = ["CUCUMBER", "FRIES", "COLA", "BURGER", "DONUT", "CHEF"];
+            const initialGrid = Array(7).fill().map(() =>
+                Array(7).fill().map(() => startSymbols[Math.floor(Math.random() * startSymbols.length)])
+            );
+            drawGrid(this, initialGrid);
         }
 
         async function executeSpin(scene, isFeatureBuy) {
@@ -95,7 +102,7 @@
                 playHistoryAnimation(scene, data.history, data.total_win);
             } catch (error) {
                 console.error(error);
-                document.getElementById('winText').innerText = "連線失敗";
+                document.getElementById('winText').innerText = "連線失敗，請檢查F12";
                 resetSpinState();
             }
         }
@@ -108,9 +115,22 @@
                 for (let c = 0; c < 7; c++) {
                     let backendSymbol = gridData[r][c];
                     if (backendSymbol !== "EMPTY") {
-                        let sprite = scene.add.sprite(startX + c * spacing, startY + r * spacing, SYMBOL_MAP[backendSymbol]);
+                        // 設定起始位置為畫面上方以外，製造掉落效果
+                        let startY_pos = -300 - (r * 100); 
+                        let finalY_pos = startY + r * spacing;
+
+                        let sprite = scene.add.sprite(startX + c * spacing, startY_pos, SYMBOL_MAP[backendSymbol]);
                         sprite.setDisplaySize(90, 90);
                         symbolGroup.add(sprite);
+
+                        // 加入彈跳補間動畫
+                        scene.tweens.add({
+                            targets: sprite,
+                            y: finalY_pos,
+                            duration: 600,
+                            ease: 'Bounce.easeOut',
+                            delay: c * 50 + r * 20 // 錯開掉落時間
+                        });
                     }
                 }
             }
@@ -120,11 +140,10 @@
             let step = 0;
             function nextStep() {
                 if (step < history.length) {
-                    // 偵測免費遊戲觸發標記
                     if (history[step].is_free_spin_trigger) {
                         document.getElementById('winText').innerText = "🔥 觸發 10 次免費遊戲！🔥";
                         step++;
-                        setTimeout(nextStep, 2000); // 暫停兩秒展示提示
+                        setTimeout(nextStep, 2000);
                         return;
                     }
 
@@ -133,7 +152,9 @@
                         document.getElementById('winText').innerText = `消除贏分: $${history[step].step_win.toFixed(2)}`;
                     }
                     step++;
-                    setTimeout(nextStep, 700); 
+                    
+                    // 等待掉落動畫播完再進行下一步
+                    setTimeout(nextStep, 1300); 
                 } else {
                     document.getElementById('winText').innerText = `回合結束！總贏分: $${totalWin.toFixed(2)}`;
                     resetSpinState();
